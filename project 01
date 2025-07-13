@@ -1,0 +1,100 @@
+-- ✅ Snowflake Mini-Project: Sales Insights Dashboard
+
+-- STEP 1: Create Warehouse and Database
+CREATE OR REPLACE WAREHOUSE SALES_WH
+  WAREHOUSE_SIZE = 'XSMALL'
+  AUTO_SUSPEND = 300
+  AUTO_RESUME = TRUE;
+
+CREATE OR REPLACE DATABASE SALES_DB;
+USE DATABASE SALES_DB;
+USE SCHEMA PUBLIC;
+
+-- STEP 2: Create Tables
+CREATE OR REPLACE TABLE products (
+  product_id INT,
+  product_name STRING,
+  category STRING,
+  price NUMBER(10, 2)
+);
+
+CREATE OR REPLACE TABLE customers (
+  customer_id INT,
+  customer_name STRING,
+  email STRING,
+  region_id INT
+);
+
+CREATE OR REPLACE TABLE sales (
+  sale_id INT,
+  product_id INT,
+  customer_id INT,
+  quantity INT,
+  sale_date DATE
+);
+
+CREATE OR REPLACE TABLE regions (
+  region_id INT,
+  region_name STRING,
+  zone STRING
+);
+
+-- STEP 3: Create Masking Policy and Apply
+CREATE OR REPLACE MASKING POLICY email_mask_policy AS (val STRING)
+RETURNS STRING ->
+  CASE
+    WHEN CURRENT_ROLE() IN ('SALES_ADMIN') THEN val
+    ELSE '*****@*****.com'
+  END;
+
+ALTER TABLE customers MODIFY COLUMN email SET MASKING POLICY email_mask_policy;
+
+-- STEP 4: Create Roles and Grants
+CREATE ROLE IF NOT EXISTS SALES_ANALYST;
+CREATE ROLE IF NOT EXISTS SALES_ADMIN;
+
+GRANT USAGE ON DATABASE SALES_DB TO ROLE SALES_ANALYST, SALES_ADMIN;
+GRANT USAGE ON SCHEMA SALES_DB.PUBLIC TO ROLE SALES_ANALYST, SALES_ADMIN;
+
+GRANT SELECT ON ALL TABLES IN SCHEMA SALES_DB.PUBLIC TO ROLE SALES_ANALYST;
+GRANT SELECT, INSERT, UPDATE ON ALL TABLES IN SCHEMA SALES_DB.PUBLIC TO ROLE SALES_ADMIN;
+
+-- STEP 5: Create Summary View
+CREATE OR REPLACE VIEW sales_summary_view AS
+SELECT 
+  p.product_name,
+  r.region_name,
+  SUM(s.quantity * p.price) AS total_revenue,
+  COUNT(*) AS total_orders
+FROM sales s
+JOIN products p ON s.product_id = p.product_id
+JOIN customers c ON s.customer_id = c.customer_id
+JOIN regions r ON c.region_id = r.region_id
+GROUP BY p.product_name, r.region_name;
+
+-- STEP 6: Sample Test Data Inserts
+INSERT INTO products VALUES
+  (1, 'Notebook', 'Stationery', 2.50),
+  (2, 'Mouse', 'Electronics', 15.00),
+  (3, 'Pen', 'Stationery', 1.00);
+
+INSERT INTO customers VALUES
+  (101, 'Alice', 'alice@example.com', 1),
+  (102, 'Bob', 'bob@example.com', 2),
+  (103, 'Carol', 'carol@example.com', 1);
+
+INSERT INTO sales VALUES
+  (1001, 1, 101, 5, '2024-07-01'),
+  (1002, 2, 102, 2, '2024-07-01'),
+  (1003, 3, 103, 10, '2024-07-02');
+
+INSERT INTO regions VALUES
+  (1, 'South', 'ZoneA'),
+  (2, 'North', 'ZoneB');
+
+-- STEP 7: Test Queries
+-- Query 1: View Masked Email
+SELECT * FROM customers;
+
+-- Query 2: View Sales Summary
+SELECT * FROM sales_summary_view;
